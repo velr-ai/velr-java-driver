@@ -57,10 +57,30 @@ val signingTaskRequested = gradle.startParameter.taskNames.any {
     it.contains("publish", ignoreCase = true) || it.contains("sign", ignoreCase = true)
 }
 
+val androidJavadocDir = layout.buildDirectory.dir("docs/androidJavadoc")
+val releaseJavaClasses =
+    layout.buildDirectory.dir("intermediates/javac/release/compileReleaseJavaWithJavac/classes")
+
+val androidJavadoc by tasks.registering(Javadoc::class) {
+    description = "Generates Javadoc for the Android API."
+    dependsOn("compileReleaseJavaWithJavac")
+    source(android.sourceSets["main"].java.srcDirs)
+    classpath =
+        files(android.bootClasspath) +
+            configurations.getByName("releaseCompileClasspath") +
+            files(releaseJavaClasses)
+    destinationDir = androidJavadocDir.get().asFile
+    exclude("ai/velr/internal/**")
+    options.encoding = "UTF-8"
+    (options as org.gradle.external.javadoc.StandardJavadocDocletOptions)
+        .addStringOption("Xdoclint:all", "-quiet")
+}
+
 val androidJavadocJar by tasks.registering(Jar::class) {
-    description = "A documentation JAR for the Android artifact."
+    description = "A documentation JAR containing Javadoc for the Android API."
+    dependsOn(androidJavadoc)
     archiveClassifier.set("javadoc")
-    from(rootProject.layout.projectDirectory.file("README.md"))
+    from(androidJavadocDir)
 }
 
 android {
@@ -82,6 +102,10 @@ android {
             withSourcesJar()
         }
     }
+}
+
+tasks.named("assemble") {
+    dependsOn(androidJavadocJar)
 }
 
 afterEvaluate {
