@@ -1,0 +1,7 @@
+.gradle/
+build/
+*.velr
+*.velr-wal
+*.velr-shm
+*.velr-journal
+.DS_Store
