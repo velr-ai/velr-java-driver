@@ -1,0 +1,122 @@
+name: docs
+
+"on":
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.12"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Generate Java API documentation
+        shell: bash
+        run: |
+          set -euxo pipefail
+          gradle -PincludeAndroid=true javadocJar :android:androidJavadocJar
+
+          site_dir="$PWD/build/pages-site"
+          rm -rf "$site_dir"
+          mkdir -p "$site_dir/docs/jvm" "$site_dir/docs/android"
+
+          jvm_docs_jar="$(find "$PWD/build/libs" -name '*-javadoc.jar' -print -quit)"
+          android_docs_jar="$(find "$PWD/android/build/libs" -name '*-javadoc.jar' -print -quit)"
+          test -f "$jvm_docs_jar"
+          test -f "$android_docs_jar"
+
+          (
+            cd "$site_dir/docs/jvm"
+            jar xf "$jvm_docs_jar"
+          )
+          (
+            cd "$site_dir/docs/android"
+            jar xf "$android_docs_jar"
+          )
+
+          cat > "$site_dir/index.html" <<'HTML'
+          <!doctype html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>Velr Java Driver</title>
+            <style>
+              body {
+                color: #17202a;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+                line-height: 1.5;
+                margin: 0 auto;
+                max-width: 760px;
+                padding: 48px 24px;
+              }
+              a {
+                color: #0759c7;
+              }
+              li {
+                margin: 10px 0;
+              }
+            </style>
+          </head>
+          <body>
+            <h1>Velr Java Driver</h1>
+            <p>API documentation is published in separate sections.</p>
+            <ul>
+              <li><a href="./docs/jvm/">JVM API documentation</a></li>
+              <li><a href="./docs/android/">Android API documentation</a></li>
+            </ul>
+            <p>Repository: <a href="https://github.com/velr-ai/velr-java-driver">velr-ai/velr-java-driver</a></p>
+          </body>
+          </html>
+          HTML
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/pages-site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-22.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
